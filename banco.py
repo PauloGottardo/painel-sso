@@ -160,3 +160,33 @@ def logo_lateral() -> None:
 
     if LOGO.exists():
         st.sidebar.image(str(LOGO), width=200)
+
+def obter(id_desvio: int) -> dict:
+    """Retorna um desvio (como dicionário) pelo número, ou {} se não existir."""
+    with closing(conectar()) as con:
+        con.row_factory = sqlite3.Row
+        linha = con.execute(
+            "SELECT * FROM desvios WHERE id = ?", (id_desvio,)
+        ).fetchone()
+    return dict(linha) if linha else {}
+
+
+def atualizar(id_desvio: int, registro: dict) -> None:
+    """Atualiza todos os campos de um desvio."""
+    dados = {c: registro.get(c) for c in COLUNAS}
+    for c in ("data", "prazo", "data_fechamento"):
+        dados[c] = _iso(dados[c])
+    dados["status"] = dados["status"] or "Aberto"
+    atribuicoes = ", ".join(f"{c} = ?" for c in COLUNAS)
+    with closing(conectar()) as con:
+        con.execute(
+            f"UPDATE desvios SET {atribuicoes} WHERE id = ?",
+            [dados[c] for c in COLUNAS] + [id_desvio],
+        )
+        con.commit()
+
+
+def excluir(id_desvio: int) -> None:
+    with closing(conectar()) as con:
+        con.execute("DELETE FROM desvios WHERE id = ?", (id_desvio,))
+        con.commit()

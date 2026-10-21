@@ -18,6 +18,8 @@ Protótipo de painel para gestão de inspeções de segurança do trabalho em ob
 
 \- Página de configurações para gerenciar obras, locais, tipos, categorias e empreiteiras
 
+\- Acompanhamento das ações: concluir, editar e excluir desvios
+
 
 
 \## Como executar
@@ -52,7 +54,6 @@ Para exibir um logo no painel, coloque um arquivo `logo.png` na pasta do projeto
 
 \- Anexar imagens aos desvios
 
-\- Acompanhamento das ações corretivas
-
 \- Relatórios em PDF
+
 
