@@ -1,0 +1,12 @@
+# Dados (podem conter informações reais de obras)
+dados/
+
+# Logo e arquivos da empresa
+logo.png
+
+# Python
+__pycache__/
+*.pyc
+
+# Streamlit (segredos locais)
+.streamlit/secrets.toml
