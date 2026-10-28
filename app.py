@@ -4,6 +4,8 @@ import streamlit as st
 
 import banco
 
+import graficos
+
 st.set_page_config(page_title="Painel SSO", page_icon="🦺", layout="wide")
 banco.logo_lateral()
 
@@ -79,7 +81,7 @@ with esq:
         .size()
         .reset_index(name="quantidade")
     )
-    fig = px.bar(
+    fig = graficos.barras(
         semanal, x="data", y="quantidade", color="tipo",
         title="Evolução semanal de desvios", labels={"data": "Semana"},
     )
@@ -88,7 +90,7 @@ with esq:
 with dir_:
     por_cat = df["categoria"].value_counts().reset_index()
     por_cat.columns = ["categoria", "quantidade"]
-    fig = px.bar(
+    fig = graficos.barras(
         por_cat.sort_values("quantidade"), x="quantidade", y="categoria",
         orientation="h", title="Desvios por categoria",
     )
@@ -100,7 +102,7 @@ with esq:
     por_emp = (
         df.groupby(["empreiteira", "gravidade"]).size().reset_index(name="quantidade")
     )
-    fig = px.bar(
+    fig = graficos.barras(
         por_emp, x="empreiteira", y="quantidade", color="gravidade",
         title="Desvios por empreiteira e gravidade",
     )
@@ -109,7 +111,7 @@ with esq:
 with dir_:
     por_local = df["local"].value_counts().head(10).reset_index()
     por_local.columns = ["local", "quantidade"]
-    fig = px.bar(
+    fig = graficos.barras(
         por_local.sort_values("quantidade"), x="quantidade", y="local",
         orientation="h", title="Top 10 locais com mais ocorrências",
     )

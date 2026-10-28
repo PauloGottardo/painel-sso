@@ -5,6 +5,7 @@ import plotly.express as px
 import streamlit as st
 
 import banco
+import graficos
 import termometro as tm
 
 st.set_page_config(page_title="Termômetro de Segurança", page_icon="🌡️", layout="wide")
@@ -135,7 +136,7 @@ def painel():
     resumo["rotulo"] = resumo["periodo"].map(lambda t: tm.rotulo_periodo(t, base))
     resumo["faixa"] = resumo["media"].map(tm.faixa)
 
-    fig = px.bar(
+    fig = graficos.barras(
         resumo, x="rotulo", y="media", color="faixa", text="media",
         color_discrete_map=tm.CORES,
         category_orders={"faixa": ["Baixo", "Médio", "Alto"]},
@@ -150,14 +151,14 @@ def painel():
                   annotation_text="Alto a partir de 31")
     fig.update_xaxes(type="category")
     fig.update_yaxes(range=[0, tm.PONTOS_MAX])
-    st.plotly_chart(fig, use_container_width=True)
+    st.plotly_chart(fig, width="stretch")
 
     with st.expander("Ver tabela por período"):
         tabela = resumo[["rotulo", "preenchimentos", "media", "maxima", "faixa"]].rename(
             columns={"rotulo": base, "preenchimentos": "Preenchimentos",
                      "media": "Média", "maxima": "Máxima", "faixa": "Faixa média"}
         )
-        st.dataframe(tabela, hide_index=True, use_container_width=True)
+        st.dataframe(tabela, hide_index=True, width="stretch")
 
     # ---------- faixas por obra e pontos por grupo ----------
     resp = tm.respostas_detalhadas()
@@ -168,23 +169,23 @@ def painel():
     esq, dir_ = st.columns(2)
     with esq:
         por_obra = df.groupby(["obra", "faixa"]).size().reset_index(name="quantidade")
-        fig = px.bar(
+        fig = graficos.barras(
             por_obra, x="obra", y="quantidade", color="faixa",
             color_discrete_map=tm.CORES,
             category_orders={"faixa": ["Baixo", "Médio", "Alto"]},
             title="Preenchimentos por faixa de risco e obra",
         )
-        st.plotly_chart(fig, use_container_width=True)
+        st.plotly_chart(fig, width="stretch")
     with dir_:
         if resp.empty:
             st.info("Nenhum risco apontado no período.")
         else:
             por_grupo = resp.groupby("grupo")["pontos"].sum().reset_index()
-            fig = px.bar(
+            fig = graficos.barras(
                 por_grupo.sort_values("pontos"), x="pontos", y="grupo", orientation="h",
                 title="Pontos acumulados por grupo de risco",
             )
-            st.plotly_chart(fig, use_container_width=True)
+            st.plotly_chart(fig, width="stretch")
 
     # ---------- fatores de risco mais apontados ----------
     if not resp.empty:
@@ -192,12 +193,12 @@ def painel():
         top["fator"] = top["pergunta"].map(lambda n: tm.curto(n, 60))
         top["grupo"] = top["pergunta"].map(lambda n: tm.PERG[n][0])
         top = top.sort_values("vezes").tail(10)
-        fig = px.bar(
+        fig = graficos.barras(
             top, x="vezes", y="fator", color="grupo", orientation="h",
             title="Fatores de risco mais apontados (respostas SIM)",
             labels={"vezes": "Vezes apontado", "fator": ""},
         )
-        st.plotly_chart(fig, use_container_width=True)
+        st.plotly_chart(fig, width="stretch")
 
     # ---------- preenchimentos de risco alto ----------
     alto = df[df["faixa"] == "Alto"].sort_values("data", ascending=False)
@@ -207,7 +208,7 @@ def painel():
     else:
         st.dataframe(
             alto[["id", "data", "obra", "empresa", "responsavel", "pontuacao"]],
-            hide_index=True, use_container_width=True,
+            hide_index=True, width="stretch",
             column_config={
                 "id": "Nº",
                 "data": st.column_config.DateColumn("Data", format=FORMATO),
@@ -284,6 +285,31 @@ def novo():
 # =====================================================================
 # AÇÕES
 # =====================================================================
+def mostrar_fotos(acao_id):
+    """Mostra as fotos do antes e do depois lado a lado e devolve a lista de fotos."""
+    fotos = tm.listar_fotos(acao_id)
+    antes = [f for f in fotos if f["momento"] == "antes"]
+    depois = [f for f in fotos if f["momento"] == "depois"]
+    c1, c2 = st.columns(2)
+    for coluna, titulo, lista in ((c1, "Antes", antes), (c2, "Depois", depois)):
+        with coluna:
+            st.markdown(f"**{titulo}** ({len(lista)})")
+            if lista:
+                st.image([str(f["caminho"]) for f in lista], width=220)
+            else:
+                st.caption("Sem fotos.")
+    return fotos
+
+
+def aviso_fotos(salvas, enviadas):
+    """Texto sobre quantas fotos foram salvas."""
+    if enviadas == 0:
+        return ""
+    if salvas == enviadas:
+        return f" {salvas} foto(s) salva(s)."
+    return f" {salvas} de {enviadas} foto(s) salva(s); as demais não são imagens válidas."
+
+
 def acoes_secao():
     if termo.empty:
         st.info("Nenhum preenchimento ainda. Use a seção Novo preenchimento.")
@@ -314,7 +340,7 @@ def acoes_secao():
         st.dataframe(
             [{"Nº": n, "Desvio apontado": tm.PERG[n][1], "Pontos": tm.PERG[n][2],
               "Ações criadas": int(contagem.get(n, 0))} for n in sim],
-            hide_index=True, use_container_width=True,
+            hide_index=True, width="stretch",
         )
         with st.form("nova_acao", clear_on_submit=True):
             pergunta = st.selectbox(
@@ -326,13 +352,20 @@ def acoes_secao():
             prazo = c2.date_input(
                 "Prazo", value=date.today() + timedelta(days=3), format="DD/MM/YYYY"
             )
+            fotos_antes = st.file_uploader(
+                "Foto(s) da não conformidade - antes (opcional)",
+                type=tm.TIPOS_FOTO, accept_multiple_files=True,
+            )
             criar = st.form_submit_button("Criar ação", type="primary")
         if criar:
             if not acao.strip():
                 st.error("Descreva a ação a ser tomada. Preencha os campos novamente.")
             else:
-                tm.criar_acao(sel, pergunta, acao.strip(), responsavel.strip(), prazo)
-                ss["termo_aviso"] = ("ok", "Ação criada.")
+                novo_id = tm.criar_acao(sel, pergunta, acao.strip(), responsavel.strip(), prazo)
+                salvas = tm.salvar_fotos(novo_id, "antes", fotos_antes)
+                ss["termo_aviso"] = (
+                    "ok", f"Ação nº {novo_id} criada." + aviso_fotos(salvas, len(fotos_antes or []))
+                )
                 st.rerun()
 
     # ---------- acompanhamento ----------
@@ -367,11 +400,11 @@ def acoes_secao():
     df = df.sort_values("prazo") if situacao in ("Em aberto", "Vencidas") \
         else df.sort_values("id", ascending=False)
     tabela = df[["id", "data_preenchimento", "obra", "empresa", "desvio", "acao",
-                 "responsavel", "prazo", "situacao"]].reset_index(drop=True)
+                 "responsavel", "prazo", "situacao", "fotos"]].reset_index(drop=True)
 
     st.markdown(f"**{len(tabela)}** ação(ões). Clique em uma linha para abrir.")
     evento = st.dataframe(
-        tabela, hide_index=True, use_container_width=True,
+        tabela, hide_index=True, width="stretch",
         on_select="rerun", selection_mode="single-row", key="termo_tab_acoes",
         column_config={
             "id": "Nº",
@@ -380,11 +413,12 @@ def acoes_secao():
             "acao": "Ação",
             "prazo": st.column_config.DateColumn("Prazo", format=FORMATO),
             "situacao": "Situação",
+            "fotos": "Fotos (antes / depois)",
         },
     )
     linhas = evento.selection.rows
     if not linhas:
-        st.info("Selecione uma ação na tabela para concluir, editar ou excluir.")
+        st.info("Selecione uma ação na tabela para ver as fotos, concluir, editar ou excluir.")
         return
 
     aid = int(tabela.iloc[linhas[0]]["id"])
@@ -393,14 +427,69 @@ def acoes_secao():
         st.error("Ação não encontrada. Atualize a página.")
         return
 
+    v = ss.setdefault("foto_v", 0)  # muda após salvar fotos, para limpar os campos de envio
+    concluida = reg["status"].lower().startswith("conclu")
+
+    st.divider()
     st.markdown(f"##### Ação nº {aid}")
-    if not reg["status"].lower().startswith("conclu"):
+    fotos = mostrar_fotos(aid)
+
+    # ---------- concluir (com foto do depois) ----------
+    if not concluida:
+        st.markdown("**Concluir ação**")
+        fotos_depois = st.file_uploader(
+            "Foto(s) do depois - não conformidade resolvida (opcional)",
+            type=tm.TIPOS_FOTO, accept_multiple_files=True, key=f"a_dep_{aid}_{v}",
+        )
         if st.button("✅ Marcar como concluída hoje", type="primary", key=f"a_rapido_{aid}"):
+            salvas = tm.salvar_fotos(aid, "depois", fotos_depois)
             tm.atualizar_acao(aid, reg["acao"], reg["responsavel"],
                               para_data(reg["prazo"]), "Concluída", date.today())
-            ss["termo_aviso"] = ("ok", f"Ação nº {aid} concluída.")
+            ss["foto_v"] = v + 1
+            ss["termo_aviso"] = (
+                "ok", f"Ação nº {aid} concluída." + aviso_fotos(salvas, len(fotos_depois or []))
+            )
             st.rerun()
 
+    # ---------- adicionar mais fotos ----------
+    with st.expander("Adicionar fotos (antes ou depois)"):
+        momento = st.radio(
+            "Momento", list(tm.MOMENTOS), format_func=tm.MOMENTOS.get,
+            horizontal=True, key=f"a_mom_{aid}",
+        )
+        novas = st.file_uploader(
+            "Fotos", type=tm.TIPOS_FOTO, accept_multiple_files=True, key=f"a_novas_{aid}_{v}",
+        )
+        if st.button("Salvar fotos", key=f"a_salvar_fotos_{aid}"):
+            if not novas:
+                ss["termo_aviso"] = ("erro", "Selecione ao menos uma foto.")
+            else:
+                salvas = tm.salvar_fotos(aid, momento, novas)
+                ss["foto_v"] = v + 1
+                if salvas:
+                    ss["termo_aviso"] = ("ok", "Fotos adicionadas." + aviso_fotos(salvas, len(novas)))
+                else:
+                    ss["termo_aviso"] = ("erro", "Nenhum dos arquivos é uma imagem válida.")
+            st.rerun()
+
+    # ---------- remover uma foto ----------
+    if fotos:
+        with st.expander("Remover uma foto"):
+            rotulos, contador = {}, {"antes": 0, "depois": 0}
+            for f in fotos:
+                contador[f["momento"]] += 1
+                nome = "Antes" if f["momento"] == "antes" else "Depois"
+                rotulos[f["id"]] = f"{nome} - foto {contador[f['momento']]}"
+            escolha = st.selectbox(
+                "Foto", list(rotulos), format_func=rotulos.get, key=f"a_rem_{aid}"
+            )
+            conf_foto = st.checkbox("Confirmo que quero remover esta foto", key=f"a_rem_conf_{aid}")
+            if st.button("Remover foto", disabled=not conf_foto, key=f"a_rem_btn_{aid}"):
+                tm.remover_foto(escolha)
+                ss["termo_aviso"] = ("ok", "Foto removida.")
+                st.rerun()
+
+    # ---------- editar ----------
     STATUS = ["Aberta", "Concluída"]
     with st.form(f"a_editar_{aid}"):
         acao_e = st.text_area("Ação", value=reg["acao"] or "", height=100, key=f"a_acao_{aid}")
@@ -411,9 +500,7 @@ def acoes_secao():
             format="DD/MM/YYYY", key=f"a_prazo_{aid}",
         )
         status_e = c3.selectbox(
-            "Status", STATUS,
-            index=1 if reg["status"].lower().startswith("conclu") else 0,
-            key=f"a_status_{aid}",
+            "Status", STATUS, index=1 if concluida else 0, key=f"a_status_{aid}",
         )
         fech_e = st.date_input(
             "Data de conclusão (vale se o status for Concluída)",
@@ -431,7 +518,7 @@ def acoes_secao():
             st.rerun()
 
     with st.expander("Excluir esta ação"):
-        st.warning("A exclusão é definitiva e não pode ser desfeita.")
+        st.warning("A exclusão é definitiva e apaga também as fotos desta ação.")
         conf = st.checkbox("Confirmo que quero excluir esta ação", key=f"a_conf_{aid}")
         if st.button("Excluir ação", disabled=not conf, key=f"a_del_{aid}"):
             tm.excluir_acao(aid)
@@ -457,7 +544,7 @@ def historico():
 
     st.markdown(f"**{len(tabela)}** preenchimento(s). Clique em uma linha para ver os detalhes.")
     evento = st.dataframe(
-        tabela, hide_index=True, use_container_width=True,
+        tabela, hide_index=True, width="stretch",
         on_select="rerun", selection_mode="single-row", key="termo_tab_hist",
         column_config={
             "id": "Nº",
@@ -484,7 +571,7 @@ def historico():
     st.dataframe(
         [{"Nº": n, "Grupo": g, "Pergunta": texto, "Pontos": pts,
           "Resposta": "SIM" if n in sim else "NÃO"} for n, g, texto, pts in tm.PERGUNTAS],
-        hide_index=True, use_container_width=True,
+        hide_index=True, width="stretch",
     )
 
     acoes = tm.listar_acoes()
@@ -492,18 +579,19 @@ def historico():
     if len(acoes):
         st.markdown("**Ações deste preenchimento**")
         st.dataframe(
-            acoes[["id", "desvio", "acao", "responsavel", "prazo", "situacao"]],
-            hide_index=True, use_container_width=True,
+            acoes[["id", "desvio", "acao", "responsavel", "prazo", "situacao", "fotos"]],
+            hide_index=True, width="stretch",
             column_config={
                 "id": "Nº", "desvio": "Desvio apontado", "acao": "Ação",
                 "prazo": st.column_config.DateColumn("Prazo", format=FORMATO),
                 "situacao": "Situação",
+                "fotos": "Fotos (antes / depois)",
             },
         )
 
     with st.expander("Excluir este preenchimento"):
         st.warning(
-            "A exclusão é definitiva e apaga também as ações vinculadas a este preenchimento."
+            "A exclusão é definitiva e apaga também as ações e as fotos vinculadas a este preenchimento."
         )
         conf = st.checkbox("Confirmo que quero excluir", key=f"h_conf_{tid}")
         if st.button("Excluir preenchimento", disabled=not conf, key=f"h_del_{tid}"):
