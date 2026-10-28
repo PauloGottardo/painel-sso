@@ -200,7 +200,102 @@ def painel():
         )
         st.plotly_chart(fig, width="stretch")
 
-    # ---------- preenchimentos de risco alto ----------
+    # ---------- ações abertas a partir do Termômetro ----------
+    st.divider()
+    st.subheader("Ações abertas a partir do Termômetro")
+    if acoes.empty:
+        st.info("Nenhuma ação criada para os preenchimentos do período e dos filtros escolhidos.")
+    else:
+        ac = tm.preparar_acoes(acoes)
+        cores_acao = {"Concluída": "#2E7D32", "Em aberto": "#1E88E5", "Vencida": "#C62828"}
+        ordem_acao = ["Concluída", "Em aberto", "Vencida"]
+        fechadas = ac[ac["fechada"]]
+        vencidas = ac[ac["vencida"]]
+
+        k1, k2, k3, k4 = st.columns(4)
+        k1.metric("Taxa de conclusão", f"{100 * len(fechadas) / len(ac):.0f}%")
+        k2.metric(
+            "Concluídas no prazo",
+            f"{100 * fechadas['no_prazo'].mean():.0f}%" if len(fechadas) else "—",
+        )
+        tempo_medio = fechadas["dias_conclusao"].mean()
+        k3.metric(
+            "Tempo médio para concluir",
+            "—" if pd.isna(tempo_medio) else f"{tempo_medio:.1f} dias",
+        )
+        k4.metric(
+            "Atraso médio das vencidas",
+            f"{vencidas['dias_atraso'].mean():.0f} dias" if len(vencidas) else "—",
+        )
+
+        e1, e2 = st.columns(2)
+        with e1:
+            por_data = tm.acoes_por_periodo(ac, base)
+            fig = graficos.barras(
+                por_data, x="rotulo", y="quantidade", color="situacao_g",
+                color_discrete_map=cores_acao,
+                category_orders={"situacao_g": ordem_acao},
+                labels={"rotulo": base, "quantidade": "Ações", "situacao_g": "Situação"},
+                title=f"Ações abertas por {base.lower()} (data do preenchimento)",
+            )
+            fig.update_xaxes(type="category")
+            st.plotly_chart(fig, width="stretch")
+        with e2:
+            fluxo = tm.fluxo_acoes(ac, base)
+            fig = graficos.barras(
+                fluxo, x="rotulo", y="quantidade", color="tipo", barmode="group",
+                color_discrete_map={"Abertas": "#1E88E5", "Concluídas": "#2E7D32"},
+                labels={"rotulo": base, "quantidade": "Ações", "tipo": ""},
+                title=f"Ações abertas x concluídas por {base.lower()}",
+            )
+            fig.update_xaxes(type="category")
+            st.plotly_chart(fig, width="stretch")
+
+        e3, e4 = st.columns(2)
+        with e3:
+            por = st.segmented_control(
+                "Ver por", ["Obra", "Empresa"], default="Obra", key="termo_acoes_por"
+            ) or "Obra"
+            coluna = "obra" if por == "Obra" else "empresa"
+            grupo = ac.groupby([coluna, "situacao_g"]).size().reset_index(name="quantidade")
+            ordem = grupo.groupby(coluna)["quantidade"].sum().sort_values().index.tolist()
+            fig = graficos.barras(
+                grupo, x="quantidade", y=coluna, color="situacao_g", orientation="h",
+                color_discrete_map=cores_acao,
+                category_orders={"situacao_g": ordem_acao, coluna: ordem},
+                labels={coluna: por, "quantidade": "Ações", "situacao_g": "Situação"},
+                title=f"Situação das ações por {por.lower()}",
+            )
+            st.plotly_chart(fig, width="stretch")
+        with e4:
+            por_desvio = ac.groupby("pergunta").size().reset_index(name="quantidade")
+            por_desvio["fator"] = por_desvio["pergunta"].map(lambda n: tm.curto(n, 50))
+            por_desvio = por_desvio.sort_values("quantidade").tail(8)
+            fig = graficos.barras(
+                por_desvio, x="quantidade", y="fator", orientation="h",
+                labels={"quantidade": "Ações", "fator": ""},
+                title="Desvios que mais geram ações",
+            )
+            st.plotly_chart(fig, width="stretch")
+
+        st.markdown("**Ações vencidas**")
+        if vencidas.empty:
+            st.success("Nenhuma ação vencida no período.")
+        else:
+            venc = vencidas.sort_values("dias_atraso", ascending=False)
+            st.dataframe(
+                venc[["id", "obra", "empresa", "desvio", "acao", "responsavel", "prazo",
+                      "dias_atraso"]],
+                hide_index=True, width="stretch",
+                column_config={
+                    "id": "Nº",
+                    "desvio": "Desvio apontado",
+                    "acao": "Ação",
+                    "prazo": st.column_config.DateColumn("Prazo", format=FORMATO),
+                    "dias_atraso": st.column_config.NumberColumn("Dias de atraso", format="%d"),
+                },
+            )    
+# ---------- preenchimentos de risco alto ----------
     alto = df[df["faixa"] == "Alto"].sort_values("data", ascending=False)
     st.subheader("Preenchimentos de risco alto")
     if alto.empty:

@@ -333,3 +333,49 @@ def _apagar_fotos(con, ids_acoes: list) -> None:
         ).fetchall():
             (PASTA_FOTOS / arquivo).unlink(missing_ok=True)
         con.execute("DELETE FROM termometro_fotos WHERE acao_id = ?", (acao_id,))
+
+# ---------------- gráficos de ações ----------------
+def preparar_acoes(acoes: pd.DataFrame) -> pd.DataFrame:
+    """Acrescenta colunas de apoio para os gráficos e indicadores de ações."""
+    a = acoes.copy()
+    hoje = pd.Timestamp.today().normalize()
+    a["situacao_g"] = a["situacao"].replace({"Aberta": "Em aberto"})
+    a["no_prazo"] = (
+        a["fechada"] & a["data_fechamento"].notna() & (a["data_fechamento"] <= a["prazo"])
+    )
+    a["dias_conclusao"] = (a["data_fechamento"] - a["data_preenchimento"]).dt.days.where(a["fechada"])
+    a["dias_atraso"] = (hoje - a["prazo"]).dt.days.where(a["vencida"])
+    return a
+
+
+def acoes_por_periodo(a: pd.DataFrame, base: str) -> pd.DataFrame:
+    """Quantidade de ações por período de abertura e por situação."""
+    t = a.assign(periodo=inicio_periodo(a["data_preenchimento"], base))
+    r = (
+        t.groupby(["periodo", "situacao_g"])
+        .size()
+        .reset_index(name="quantidade")
+        .sort_values("periodo")
+    )
+    r["rotulo"] = r["periodo"].map(lambda p: rotulo_periodo(p, base))
+    return r
+
+
+def fluxo_acoes(a: pd.DataFrame, base: str) -> pd.DataFrame:
+    """Ações abertas (pela data do preenchimento) e concluídas (pela data de conclusão) por período."""
+    abertas = (
+        a.assign(periodo=inicio_periodo(a["data_preenchimento"], base))
+        .groupby("periodo").size().rename("Abertas")
+    )
+    c = a[a["fechada"] & a["data_fechamento"].notna()]
+    concluidas = (
+        c.assign(periodo=inicio_periodo(c["data_fechamento"], base))
+        .groupby("periodo").size().rename("Concluídas")
+    )
+    f = (
+        pd.concat([abertas, concluidas], axis=1)
+        .fillna(0).astype(int).reset_index().sort_values("periodo")
+    )
+    f = f.melt(id_vars="periodo", var_name="tipo", value_name="quantidade")
+    f["rotulo"] = f["periodo"].map(lambda p: rotulo_periodo(p, base))
+    return f
