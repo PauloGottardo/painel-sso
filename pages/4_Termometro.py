@@ -5,6 +5,7 @@ import plotly.express as px
 import streamlit as st
 
 import banco
+import relatorios
 import graficos
 import termometro as tm
 
@@ -35,6 +36,25 @@ st.divider()
 
 termo = tm.listar()
 FORMATO = "DD/MM/YY"
+
+
+def bloco_pdf(tid, chave):
+    """Botões para gerar e baixar o relatório em PDF de um preenchimento do Termômetro."""
+    linha = termo[termo["id"] == tid].iloc[0]
+    st.caption(
+        f"Relatório em PDF do preenchimento nº {tid}: {linha['obra']}, "
+        f"{linha['data']:%d/%m/%Y}, {linha['pontuacao']} pontos."
+    )
+    c1, c2, _ = st.columns([1, 1, 2])
+    assinatura = relatorios.assinatura_termometro(tid)
+    if c1.button("Gerar relatório em PDF", key=f"pdf_gerar_{chave}_{tid}"):
+        ss[f"pdf_{chave}"] = (tid, assinatura, relatorios.pdf_termometro(tid))
+    pronto = ss.get(f"pdf_{chave}")
+    if pronto and pronto[0] == tid and pronto[1] == assinatura:
+        c2.download_button(
+            "Baixar PDF", data=pronto[2], file_name=relatorios.nome_arquivo_termometro(tid),
+            mime="application/pdf", key=f"pdf_baixar_{chave}_{tid}",
+        )
 
 
 def para_data(valor, padrao=None):
@@ -424,6 +444,7 @@ def acoes_secao():
     if ss.get("termo_prenc") not in ids:
         ss.pop("termo_prenc", None)
     sel = st.selectbox("Preenchimento", ids, format_func=rotulo, key="termo_prenc")
+    bloco_pdf(sel, "acoes")
 
     sim = tm.respostas_sim(sel)
     todas = tm.listar_acoes()
@@ -683,6 +704,8 @@ def historico():
                 "fotos": "Fotos (antes / depois)",
             },
         )
+
+    bloco_pdf(tid, "hist")
 
     with st.expander("Excluir este preenchimento"):
         st.warning(

@@ -4,6 +4,7 @@ import pandas as pd
 import streamlit as st
 
 import banco
+import relatorios
 
 st.set_page_config(page_title="Acompanhamento", page_icon="✅", layout="wide")
 banco.logo_lateral()
@@ -22,6 +23,42 @@ if "aviso" in st.session_state:
 if banco.contar() == 0:
     st.info("Nenhum desvio cadastrado ainda.")
     st.stop()
+
+with st.expander("Relatório em PDF"):
+    todos = banco.listar()
+    r1, r2, r3 = st.columns(3)
+    obra_rel = r1.selectbox("Obra", ["Todas"] + sorted(todos["obra"].dropna().unique()), key="rel_obra")
+    sit_rel = r2.selectbox("Situação", ["Todos", "Em aberto", "Vencidos", "Concluídos"], key="rel_sit")
+    periodo_rel = r3.date_input(
+        "Período", (todos["data"].min().date(), todos["data"].max().date()),
+        format="DD/MM/YYYY", key="rel_periodo",
+    )
+    if isinstance(periodo_rel, tuple) and len(periodo_rel) == 2:
+        ini_rel, fim_rel = pd.Timestamp(periodo_rel[0]), pd.Timestamp(periodo_rel[1])
+        rel = todos[(todos["data"] >= ini_rel) & (todos["data"] <= fim_rel)]
+        if obra_rel != "Todas":
+            rel = rel[rel["obra"] == obra_rel]
+        if sit_rel == "Em aberto":
+            rel = rel[~rel["fechado"]]
+        elif sit_rel == "Vencidos":
+            rel = rel[rel["vencido"]]
+        elif sit_rel == "Concluídos":
+            rel = rel[rel["fechado"]]
+        st.caption(f"{len(rel)} desvio(s) no relatório.")
+        chave_rel = (obra_rel, sit_rel, ini_rel, fim_rel, len(rel))
+        if st.button("Gerar relatório em PDF", key="rel_gerar", disabled=rel.empty):
+            st.session_state["rel_pdf"] = (
+                chave_rel, relatorios.pdf_desvios(rel, obra_rel, sit_rel, ini_rel, fim_rel),
+            )
+        pronto = st.session_state.get("rel_pdf")
+        if pronto and pronto[0] == chave_rel:
+            st.download_button(
+                "Baixar PDF", data=pronto[1],
+                file_name=relatorios.nome_arquivo_desvios(obra_rel, ini_rel, fim_rel),
+                mime="application/pdf", key="rel_baixar",
+            )
+    else:
+        st.info("Escolha a data inicial e a final.")
 
 STATUS = ["Aberto", "Concluído"]
 
