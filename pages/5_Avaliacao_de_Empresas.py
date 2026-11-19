@@ -38,6 +38,7 @@ st.divider()
 
 dados = av.listar()
 FORMATO = "DD/MM/YY"
+MES_INTEIRO = "Mês inteiro"
 
 
 def seletor_notas(prefixo, padrao=None):
@@ -73,16 +74,17 @@ def quadro():
         st.info("Nenhuma avaliação registrada ainda. Use a seção Nova avaliação.")
         return
 
-    # depois de salvar, abre o quadro da obra e do mês avaliados
+    # depois de salvar, abre o quadro da obra, do mês e da data avaliados
     if "aval_q_pend" in ss:
-        obra_p, mes_p = ss.pop("aval_q_pend")
+        obra_p, mes_p, dia_p = ss.pop("aval_q_pend")
         ss["aval_q_obra"] = obra_p
         ss["aval_q_mes"] = mes_p
+        ss["aval_q_data"] = dia_p
 
     obras = sorted(dados["obra"].dropna().unique())
     if ss.get("aval_q_obra") not in obras:
         ss.pop("aval_q_obra", None)
-    c1, c2 = st.columns(2)
+    c1, c2, c3 = st.columns(3)
     obra = c1.selectbox("Obra", obras, key="aval_q_obra")
 
     meses = [pd.Timestamp(m) for m in sorted(dados[dados["obra"] == obra]["mes_ref"].unique(), reverse=True)]
@@ -90,16 +92,32 @@ def quadro():
         ss.pop("aval_q_mes", None)
     mes = c2.selectbox("Mês", meses, format_func=av.rotulo_mes, key="aval_q_mes")
 
-    linhas = av.linhas_quadro(dados, obra, mes)
-    data_ref = max(l["data"] for l in linhas)
+    contagem = av.contagem_por_data(dados, obra, mes)
+    opcoes_data = av.datas_do_mes(dados, obra, mes) + [MES_INTEIRO]
+    if ss.get("aval_q_data") not in opcoes_data:
+        ss.pop("aval_q_data", None)
+
+    def rotulo_data(d):
+        if isinstance(d, str):
+            return "Mês inteiro (a mais recente de cada empresa)"
+        return f"{d:%d/%m/%Y}  ({contagem[d]} empresa(s))"
+
+    dia = c3.selectbox("Data da avaliação", opcoes_data, format_func=rotulo_data, key="aval_q_data")
+    filtro_dia = None if isinstance(dia, str) else dia
+
+    linhas = av.linhas_quadro(dados, obra, mes, filtro_dia)
+    data_ref = filtro_dia if filtro_dia is not None else max(l["data"] for l in linhas)
     titulo = f"{av.MESES[mes.month - 1].upper()}  {data_ref:%d/%m/%y}"
     st.markdown(av.html_quadro(linhas, titulo), unsafe_allow_html=True)
-    st.caption(
-        f"{len(linhas)} empresa(s) avaliada(s). Quando uma empresa tem mais de uma avaliação "
-        "no mês, o quadro mostra a mais recente."
-    )
+    if filtro_dia is not None:
+        st.caption(f"{len(linhas)} empresa(s) avaliada(s) em {filtro_dia:%d/%m/%Y}.")
+    else:
+        st.caption(
+            f"{len(linhas)} empresa(s) avaliada(s) no mês. Quando uma empresa tem mais de uma avaliação, "
+            "o quadro mostra a mais recente. Para ver só uma data, escolha-a em Data da avaliação."
+        )
 
-    with st.expander("Ver a pontuação do mês"):
+    with st.expander("Ver a pontuação"):
         pontos = dados[dados["id"].isin([l["id"] for l in linhas])][["empresa", "data", "pontos", "pct"]]
         st.dataframe(
             pontos.rename(columns={"empresa": "Empresa", "data": "Data", "pontos": "Pontos", "pct": "Pontuação"}),
@@ -160,7 +178,7 @@ def nova():
             av.salvar(data, obra, empresa, notas, avaliador.strip(), obs.strip())
             ss["aval_v"] = v + 1
             ss["aval_secao_pendente"] = "Quadro"
-            ss["aval_q_pend"] = (obra, mes)
+            ss["aval_q_pend"] = (obra, mes, pd.Timestamp(data).normalize())
             ss["aval_aviso"] = ("ok", f"Avaliação de {empresa} salva.")
             st.rerun()
 

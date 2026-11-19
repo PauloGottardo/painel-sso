@@ -111,9 +111,26 @@ def rotulo_mes(ts) -> str:
 
 
 # ---------------------------------------------------------------- dados para o quadro e os gráficos
-def linhas_quadro(df: pd.DataFrame, obra: str, mes) -> list:
-    """Uma linha por empresa: a avaliação mais recente do mês, na ordem em que as empresas foram avaliadas."""
+def datas_do_mes(df: pd.DataFrame, obra: str, mes) -> list:
+    """Datas (a mais recente primeiro) em que houve avaliação na obra e no mês."""
     d = df[(df["obra"] == obra) & (df["mes_ref"] == pd.Timestamp(mes))]
+    return [pd.Timestamp(x) for x in sorted(d["data"].dt.normalize().unique(), reverse=True)]
+
+
+def contagem_por_data(df: pd.DataFrame, obra: str, mes) -> dict:
+    """Quantidade de empresas avaliadas em cada data da obra e do mês."""
+    d = df[(df["obra"] == obra) & (df["mes_ref"] == pd.Timestamp(mes))]
+    return {pd.Timestamp(k): int(v) for k, v in d.groupby(d["data"].dt.normalize())["empresa"].nunique().items()}
+
+
+def linhas_quadro(df: pd.DataFrame, obra: str, mes, dia=None) -> list:
+    """Uma linha por empresa, na ordem em que as empresas foram avaliadas.
+
+    Com dia, usa só as avaliações daquela data. Sem dia, usa a mais recente de cada empresa no mês.
+    """
+    d = df[(df["obra"] == obra) & (df["mes_ref"] == pd.Timestamp(mes))]
+    if dia is not None:
+        d = d[d["data"].dt.normalize() == pd.Timestamp(dia).normalize()]
     if d.empty:
         return []
     ordem = d.groupby("empresa")["id"].min().sort_values().index.tolist()
